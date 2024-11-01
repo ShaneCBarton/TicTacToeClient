@@ -7,7 +7,7 @@ using TMPro;
 
 public class NetworkClient : MonoBehaviour
 {
-    private enum UIState { Login, AccountCreation, Room, Playing, Feedback }
+    private enum UIState { Login, AccountCreation, Room, Playing, Feedback, Waiting }
     private UIState currentState;
 
     [SerializeField] private GameObject loginPanel;
@@ -22,8 +22,8 @@ public class NetworkClient : MonoBehaviour
     [SerializeField] private TMP_InputField roomNameField;
     [SerializeField] private TextMeshProUGUI roomFeedbackText;
 
-    [SerializeField] private GameObject playingPanel;
-    [SerializeField] private TextMeshProUGUI playingFeedbackText;
+    [SerializeField] private GameObject waitingPanel;
+    [SerializeField] private TextMeshProUGUI waitingFeedbackText;
 
     NetworkDriver networkDriver;
     NetworkConnection networkConnection;
@@ -39,7 +39,7 @@ public class NetworkClient : MonoBehaviour
         loginPanel.SetActive(false);
         accountCreationPanel.SetActive(false);
         roomPanel.SetActive(false);
-        playingPanel.SetActive(false);
+        waitingPanel.SetActive(false);
         feedbackText.gameObject.SetActive(false);
 
         switch (currentState)
@@ -54,10 +54,14 @@ public class NetworkClient : MonoBehaviour
                 roomPanel.SetActive(true);
                 break;
             case UIState.Playing:
-                playingPanel.SetActive(true);
+                // add playing panel here
                 break;
             case UIState.Feedback:
                 feedbackText.gameObject.SetActive(true);
+                break;
+            case UIState.Waiting:
+                waitingPanel.SetActive(true);
+                DisplayWaitingFeedback("Waiting for player to join.");
                 break;
         }
     }
@@ -119,18 +123,23 @@ public class NetworkClient : MonoBehaviour
         else if (msg.StartsWith("RoomCreated:"))
         {
             DisplayRoomFeedback("Room created successfully: " + msg.Split(':')[1]);
-            ChangeUIState(UIState.Playing);
+            ChangeUIState(UIState.Waiting);
         }
         else if (msg.StartsWith("JoinedRoom:"))
         {
             DisplayRoomFeedback("Joined room: " + msg.Split(':')[1]);
-            ChangeUIState(UIState.Playing);
+            ChangeUIState(UIState.Waiting);
+        }
+        else if (msg.StartsWith("WaitingForPlayers"))
+        {
+            ChangeUIState(UIState.Waiting);
         }
         else if (msg.StartsWith("PlayerJoined:"))
         {
             DisplayRoomFeedback("A new player has joined your room.");
+            ChangeUIState(UIState.Playing);
         }
-        else if (msg.StartsWith("RoomAlreadyExists:"))
+        else if (msg.StartsWith("RoomExists:"))
         {
             DisplayRoomFeedback("RoomExists: " + msg.Split(':')[1]);
             string roomName = msg.Split(':')[1];
@@ -165,6 +174,11 @@ public class NetworkClient : MonoBehaviour
         roomFeedbackText.text = message;
     }
 
+    private void DisplayWaitingFeedback(string message)
+    {
+        waitingFeedbackText.text = message;
+    }
+
     private void DisplayFeedback(string message)
     {
         ChangeUIState(UIState.Feedback);
@@ -176,7 +190,7 @@ public class NetworkClient : MonoBehaviour
     }
 
 
-    private void ReturnToLogin()
+    public void ReturnToLogin()
     {
         ChangeUIState(UIState.Login);
     }
