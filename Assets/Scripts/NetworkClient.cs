@@ -1,18 +1,111 @@
 using UnityEngine;
-using UnityEngine.Assertions;
 using Unity.Collections;
 using Unity.Networking.Transport;
 using System.Text;
-using Unity.Networking.Transport.Relay;
+using UnityEngine.UI;
+using TMPro;
 
 public class NetworkClient : MonoBehaviour
 {
+    private enum UIState { Login, AccountCreation, Feedback }
+    private UIState currentState;
+
+    [SerializeField] private GameObject loginPanel;
+    [SerializeField] private TMP_InputField loginUsernameField;
+    [SerializeField] private TMP_InputField loginPasswordField;
+    [SerializeField] private GameObject accountCreationPanel;
+    [SerializeField] private TMP_InputField createUsernameField;
+    [SerializeField] private TMP_InputField createPasswordField;
+    [SerializeField] private TextMeshProUGUI feedbackText;
+
     NetworkDriver networkDriver;
     NetworkConnection networkConnection;
     NetworkPipeline reliableAndInOrderPipeline;
     NetworkPipeline nonReliableNotInOrderedPipeline;
     const ushort NetworkPort = 9001;
-    const string IPAddress = "192.168.2.20";
+    const string IPAddress = "10.0.0.33";
+
+    private void ChangeUIState(UIState newState)
+    {
+        currentState = newState;
+
+        loginPanel.SetActive(currentState == UIState.Login);
+        accountCreationPanel.SetActive(currentState == UIState.AccountCreation);
+        feedbackText.gameObject.SetActive(currentState == UIState.Feedback);
+    }
+
+    public void OnLoginButtonClicked()
+    {
+        string username = loginUsernameField.text;
+        string password = loginPasswordField.text;
+
+        if (string.IsNullOrEmpty(username) || string.IsNullOrEmpty(password))
+        {
+            DisplayFeedback("Please enter both a username and password.");
+            return;
+        }
+
+        SendMessageToServer($"Login:{username}:{password}");
+    }
+
+    public void OnCreateAccountButtonClicked()
+    {
+        string username = createUsernameField.text;
+        string password = createPasswordField.text;
+
+        if (string.IsNullOrEmpty(username) || string.IsNullOrEmpty(password))
+        {
+            DisplayFeedback("Please enter both a username and password to create an account.");
+            return;
+        }
+
+        SendMessageToServer($"CreateAccount:{username}:{password}");
+    }
+
+    public void OnNewAccountButtonClicked()
+    {
+        ChangeUIState(UIState.AccountCreation);
+    }
+
+    private void ProcessReceivedMsg(string msg)
+    {
+        Debug.Log("Msg received = " + msg);
+
+        if (msg.StartsWith("LoginSuccess"))
+        {
+            DisplayFeedback("Login successful!");
+        }
+        else if (msg.StartsWith("LoginFailed"))
+        {
+            DisplayFeedback("Login failed: " + msg.Split(':')[1]);
+        }
+        else if (msg.StartsWith("AccountCreated"))
+        {
+            DisplayFeedback("Account created successfully!");
+        }
+        else if (msg.StartsWith("AccountCreationFailed"))
+        {
+            DisplayFeedback("Account creation failed: " + msg.Split(':')[1]);
+        }
+        else
+        {
+            DisplayFeedback("Unknown response from server.");
+        }
+    }
+
+    private void DisplayFeedback(string message)
+    {
+        ChangeUIState(UIState.Feedback);
+        feedbackText.text = message;
+        Invoke("ReturnToLogin", 2.0f);
+    }
+
+
+    private void ReturnToLogin()
+    {
+        ChangeUIState(UIState.Login);
+    }
+
 
     void Start()
     {
@@ -22,6 +115,7 @@ public class NetworkClient : MonoBehaviour
         networkConnection = default(NetworkConnection);
         NetworkEndpoint endpoint = NetworkEndpoint.Parse(IPAddress, NetworkPort, NetworkFamily.Ipv4);
         networkConnection = networkDriver.Connect(endpoint);
+        ChangeUIState(UIState.Login);
     }
 
     public void OnDestroy()
@@ -96,11 +190,6 @@ public class NetworkClient : MonoBehaviour
         if (networkEventType == NetworkEvent.Type.Empty)
             return false;
         return true;
-    }
-
-    private void ProcessReceivedMsg(string msg)
-    {
-        Debug.Log("Msg received = " + msg);
     }
 
     public void SendMessageToServer(string msg)
