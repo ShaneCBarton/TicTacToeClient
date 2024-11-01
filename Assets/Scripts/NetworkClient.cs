@@ -7,7 +7,7 @@ using TMPro;
 
 public class NetworkClient : MonoBehaviour
 {
-    private enum UIState { Login, AccountCreation, Feedback }
+    private enum UIState { Login, AccountCreation, Room, Playing, Feedback }
     private UIState currentState;
 
     [SerializeField] private GameObject loginPanel;
@@ -17,6 +17,13 @@ public class NetworkClient : MonoBehaviour
     [SerializeField] private TMP_InputField createUsernameField;
     [SerializeField] private TMP_InputField createPasswordField;
     [SerializeField] private TextMeshProUGUI feedbackText;
+
+    [SerializeField] private GameObject roomPanel;
+    [SerializeField] private TMP_InputField roomNameField;
+    [SerializeField] private TextMeshProUGUI roomFeedbackText;
+
+    [SerializeField] private GameObject playingPanel;
+    [SerializeField] private TextMeshProUGUI playingFeedbackText;
 
     NetworkDriver networkDriver;
     NetworkConnection networkConnection;
@@ -29,9 +36,30 @@ public class NetworkClient : MonoBehaviour
     {
         currentState = newState;
 
-        loginPanel.SetActive(currentState == UIState.Login);
-        accountCreationPanel.SetActive(currentState == UIState.AccountCreation);
-        feedbackText.gameObject.SetActive(currentState == UIState.Feedback);
+        loginPanel.SetActive(false);
+        accountCreationPanel.SetActive(false);
+        roomPanel.SetActive(false);
+        playingPanel.SetActive(false);
+        feedbackText.gameObject.SetActive(false);
+
+        switch (currentState)
+        {
+            case UIState.Login:
+                loginPanel.SetActive(true);
+                break;
+            case UIState.AccountCreation:
+                accountCreationPanel.SetActive(true);
+                break;
+            case UIState.Room:
+                roomPanel.SetActive(true);
+                break;
+            case UIState.Playing:
+                playingPanel.SetActive(true);
+                break;
+            case UIState.Feedback:
+                feedbackText.gameObject.SetActive(true);
+                break;
+        }
     }
 
     public void OnLoginButtonClicked()
@@ -74,6 +102,7 @@ public class NetworkClient : MonoBehaviour
         if (msg.StartsWith("LoginSuccess"))
         {
             DisplayFeedback("Login successful!");
+            ChangeUIState(UIState.Room);
         }
         else if (msg.StartsWith("LoginFailed"))
         {
@@ -87,17 +116,63 @@ public class NetworkClient : MonoBehaviour
         {
             DisplayFeedback("Account creation failed: " + msg.Split(':')[1]);
         }
+        else if (msg.StartsWith("RoomCreated:"))
+        {
+            DisplayRoomFeedback("Room created successfully: " + msg.Split(':')[1]);
+            ChangeUIState(UIState.Playing);
+        }
+        else if (msg.StartsWith("JoinedRoom:"))
+        {
+            DisplayRoomFeedback("Joined room: " + msg.Split(':')[1]);
+            ChangeUIState(UIState.Playing);
+        }
+        else if (msg.StartsWith("PlayerJoined:"))
+        {
+            DisplayRoomFeedback("A new player has joined your room.");
+        }
+        else if (msg.StartsWith("RoomAlreadyExists:"))
+        {
+            DisplayRoomFeedback("RoomExists: " + msg.Split(':')[1]);
+            string roomName = msg.Split(':')[1];
+            SendMessageToServer($"JoinRoom:{roomName}");
+        }
+        else if (msg.StartsWith("RoomDoesNotExist:"))
+        {
+            DisplayRoomFeedback("Room does not exist: " + msg.Split(':')[1]);
+            string roomName = msg.Split(':')[1];
+            SendMessageToServer($"CreateRoom:{roomName}");
+        }
         else
         {
             DisplayFeedback("Unknown response from server.");
         }
     }
 
+    public void OnJoinOrCreateRoomButtonClicked()
+    {
+        string roomName = roomNameField.text;
+        if (string.IsNullOrEmpty(roomName))
+        {
+            DisplayRoomFeedback("Please enter a room name.");
+            return;
+        }
+
+        SendMessageToServer($"CheckRoom:{roomName}");
+    }
+
+    private void DisplayRoomFeedback(string message)
+    {
+        roomFeedbackText.text = message;
+    }
+
     private void DisplayFeedback(string message)
     {
         ChangeUIState(UIState.Feedback);
         feedbackText.text = message;
-        Invoke("ReturnToLogin", 2.0f);
+        if (message.Contains("failed"))
+        {
+            Invoke("ReturnToLogin", 2.0f);
+        }
     }
 
 
