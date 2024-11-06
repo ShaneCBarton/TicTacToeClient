@@ -10,20 +10,28 @@ public class NetworkClient : MonoBehaviour
     private enum UIState { Login, AccountCreation, Room, Playing, Feedback, Waiting }
     private UIState currentState;
 
+    [Header("Login")]
     [SerializeField] private GameObject loginPanel;
     [SerializeField] private TMP_InputField loginUsernameField;
     [SerializeField] private TMP_InputField loginPasswordField;
+
+    [Header("AccountCreation")]
     [SerializeField] private GameObject accountCreationPanel;
     [SerializeField] private TMP_InputField createUsernameField;
     [SerializeField] private TMP_InputField createPasswordField;
     [SerializeField] private TextMeshProUGUI feedbackText;
 
+    [Header("Room")]
     [SerializeField] private GameObject roomPanel;
     [SerializeField] private TMP_InputField roomNameField;
     [SerializeField] private TextMeshProUGUI roomFeedbackText;
 
+    [Header("Waiting")]
     [SerializeField] private GameObject waitingPanel;
     [SerializeField] private TextMeshProUGUI waitingFeedbackText;
+
+    [Header("Playing")]
+    [SerializeField] private GameObject playingPanel;
 
     NetworkDriver networkDriver;
     NetworkConnection networkConnection;
@@ -40,6 +48,7 @@ public class NetworkClient : MonoBehaviour
         accountCreationPanel.SetActive(false);
         roomPanel.SetActive(false);
         waitingPanel.SetActive(false);
+        playingPanel.SetActive(false);
         feedbackText.gameObject.SetActive(false);
 
         switch (currentState)
@@ -54,7 +63,7 @@ public class NetworkClient : MonoBehaviour
                 roomPanel.SetActive(true);
                 break;
             case UIState.Playing:
-                // add playing panel here
+                playingPanel.SetActive(true);
                 break;
             case UIState.Feedback:
                 feedbackText.gameObject.SetActive(true);
@@ -73,7 +82,7 @@ public class NetworkClient : MonoBehaviour
 
         if (string.IsNullOrEmpty(username) || string.IsNullOrEmpty(password))
         {
-            DisplayFeedback("Please enter both a username and password.");
+            DisplayFeedback("Error: Please enter both a username and password.");
             return;
         }
 
@@ -87,7 +96,7 @@ public class NetworkClient : MonoBehaviour
 
         if (string.IsNullOrEmpty(username) || string.IsNullOrEmpty(password))
         {
-            DisplayFeedback("Please enter both a username and password to create an account.");
+            DisplayFeedback("Error: Please enter both a username and password to create an account.");
             return;
         }
 
@@ -97,6 +106,10 @@ public class NetworkClient : MonoBehaviour
     public void OnNewAccountButtonClicked()
     {
         ChangeUIState(UIState.AccountCreation);
+    }
+    public void OnSendMessageButtonClicked()
+    {
+        SendMessageToServer("PlayerMessage:Hello opponent!");
     }
 
     private void ProcessReceivedMsg(string msg)
@@ -110,15 +123,15 @@ public class NetworkClient : MonoBehaviour
         }
         else if (msg.StartsWith("LoginFailed"))
         {
-            DisplayFeedback("Login failed: " + msg.Split(':')[1]);
+            DisplayFeedback("Error: Login failed: " + msg.Split(':')[1]);
         }
         else if (msg.StartsWith("AccountCreated"))
         {
-            DisplayFeedback("Account created successfully!");
+            DisplayFeedback("No Error: Account created successfully!");
         }
         else if (msg.StartsWith("AccountCreationFailed"))
         {
-            DisplayFeedback("Account creation failed: " + msg.Split(':')[1]);
+            DisplayFeedback("Error: Account creation failed: " + msg.Split(':')[1]);
         }
         else if (msg.StartsWith("RoomCreated:"))
         {
@@ -134,11 +147,6 @@ public class NetworkClient : MonoBehaviour
         {
             ChangeUIState(UIState.Waiting);
         }
-        else if (msg.StartsWith("PlayerJoined:"))
-        {
-            DisplayRoomFeedback("A new player has joined your room.");
-            ChangeUIState(UIState.Playing);
-        }
         else if (msg.StartsWith("RoomExists:"))
         {
             DisplayRoomFeedback("RoomExists: " + msg.Split(':')[1]);
@@ -150,6 +158,21 @@ public class NetworkClient : MonoBehaviour
             DisplayRoomFeedback("Room does not exist: " + msg.Split(':')[1]);
             string roomName = msg.Split(':')[1];
             SendMessageToServer($"CreateRoom:{roomName}");
+        }
+        else if (msg.StartsWith("PlayerLeft:"))
+        {
+            string playerName = msg.Split(':')[1];
+            DisplayRoomFeedback($"Player {playerName} has left the room");
+            ChangeUIState(UIState.Room);
+        }
+        else if (msg.StartsWith("GameStarted:"))
+        {
+            ChangeUIState(UIState.Playing);
+        }
+        else if (msg.StartsWith("OpponentMessage:"))
+        {
+            string message = msg.Split(':')[1];
+            Debug.Log($"Message from opponent: {message}");
         }
         else
         {
@@ -169,6 +192,11 @@ public class NetworkClient : MonoBehaviour
         SendMessageToServer($"CheckRoom:{roomName}");
     }
 
+    public void OnLeaveRoomButtonClicked()
+    {
+        SendMessageToServer($"LeaveRoom:{roomNameField.text}");
+    }
+
     private void DisplayRoomFeedback(string message)
     {
         roomFeedbackText.text = message;
@@ -183,14 +211,13 @@ public class NetworkClient : MonoBehaviour
     {
         ChangeUIState(UIState.Feedback);
         feedbackText.text = message;
-        if (message.Contains("failed"))
+        if (message.Contains("Error"))
         {
             Invoke("ReturnToLogin", 2.0f);
         }
     }
 
-
-    public void ReturnToLogin()
+    private void ReturnToLogin()
     {
         ChangeUIState(UIState.Login);
     }
