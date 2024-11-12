@@ -4,6 +4,7 @@ using Unity.Networking.Transport;
 using System.Text;
 using UnityEngine.UI;
 using TMPro;
+using static TicTacToe;
 
 public class NetworkClient : MonoBehaviour
 {
@@ -33,12 +34,21 @@ public class NetworkClient : MonoBehaviour
     [Header("Playing")]
     [SerializeField] private GameObject playingPanel;
 
+    [Header("TicTacToe Game")]
+    [SerializeField] private Button[] boardButtons;
+    [SerializeField] private TextMeshProUGUI currentPlayerText;
+    [SerializeField] private TextMeshProUGUI gameStatusText;
+    private TicTacToe game;
+
     NetworkDriver networkDriver;
     NetworkConnection networkConnection;
     NetworkPipeline reliableAndInOrderPipeline;
     NetworkPipeline nonReliableNotInOrderedPipeline;
     const ushort NetworkPort = 9001;
     const string IPAddress = "10.0.0.33";
+
+    private string playerName;
+    private bool isMyTurn = false;
 
     private void ChangeUIState(UIState newState)
     {
@@ -118,6 +128,7 @@ public class NetworkClient : MonoBehaviour
 
         if (msg.StartsWith("LoginSuccess"))
         {
+            playerName = loginUsernameField.text;
             DisplayFeedback("Login successful!");
             ChangeUIState(UIState.Room);
         }
@@ -167,12 +178,49 @@ public class NetworkClient : MonoBehaviour
         }
         else if (msg.StartsWith("GameStarted:"))
         {
+            string[] parts = msg.Split(':');
+            isMyTurn = parts.Length > 2 && parts[2] == "true";
+            game.ResetBoard();
+            SetBoardButtonsToEmpty();
             ChangeUIState(UIState.Playing);
+            UpdateGameUI();
+        }
+        else if (msg.StartsWith("YourTurn"))
+        {
+            isMyTurn = true;
+            UpdateGameUI();
+        }
+        else if (msg.StartsWith("OpponentTurn"))
+        {
+            isMyTurn = false;
+            UpdateGameUI();
         }
         else if (msg.StartsWith("OpponentMessage:"))
         {
             string message = msg.Split(':')[1];
             Debug.Log($"Message from opponent: {message}");
+        }
+        else if (msg.StartsWith("PlayerMove:"))
+        {
+            int index = int.Parse(msg.Split(':')[1]);
+            SendMessageToServer($"PlayerMove:{roomNameField.text}:{index}");
+        }
+        else if (msg.StartsWith("GameStarted:"))
+        {
+            game.ResetBoard();
+            SetBoardButtonsToEmpty();
+            ChangeUIState(UIState.Playing);
+            UpdateGameUI();
+        }
+        else if (msg.StartsWith("BoardState:"))
+        {
+            string[] boardState = msg.Split(':')[1].Split(',');
+            UpdateBoardFromServer(boardState);
+        }
+        else if (msg.StartsWith("GameOver:"))
+        {
+            string result = msg.Split(':')[1];
+            DisplayGameResult(result);
         }
         else
         {
@@ -231,6 +279,12 @@ public class NetworkClient : MonoBehaviour
         networkConnection = default(NetworkConnection);
         NetworkEndpoint endpoint = NetworkEndpoint.Parse(IPAddress, NetworkPort, NetworkFamily.Ipv4);
         networkConnection = networkDriver.Connect(endpoint);
+
+        game = new TicTacToe();
+        InitializeBoardButtons();
+
+        SetBoardButtonsToEmpty();
+
         ChangeUIState(UIState.Login);
     }
 
@@ -298,6 +352,90 @@ public class NetworkClient : MonoBehaviour
 
         #endregion
     }
+
+    private void InitializeBoardButtons()
+    {
+        for (int i = 0; i < boardButtons.Length; i++)
+        {
+            int index = i;
+            boardButtons[i].onClick.AddListener(() => OnBoardButtonClick(index));
+        }
+    }
+
+    private void OnBoardButtonClick(int index)
+    {
+        if (!isMyTurn)
+        {
+            DisplayGameStatus("Wait for your turn!");
+            return;
+        }
+        SendMessageToServer($"PlayerMove:{roomNameField.text}:{index}");
+    }
+
+    private void DisplayGameStatus(string message)
+    {
+        gameStatusText.text = message;
+    }
+
+    private void SetBoardButtonsToEmpty()
+    {
+        foreach (var button in boardButtons)
+        {
+            button.GetComponentInChildren<TextMeshProUGUI>().text = "";
+        }
+
+        gameStatusText.text = "";
+        currentPlayerText.text = "Current Player: X";
+    }
+
+    private void UpdateBoardFromServer(string[] boardState)
+    {
+        for (int i = 0; i < boardState.Length; i++)
+        {
+            if (boardState[i] == "X")
+                game.GetBoard()[i] = Player.X;
+            else if (boardState[i] == "O")
+                game.GetBoard()[i] = Player.O;
+            else
+                game.GetBoard()[i] = Player.None;
+        }
+
+        UpdateGameUI();
+    }
+
+    private void UpdateGameUI()
+    {
+        Player[] board = game.GetBoard();
+        for (int i = 0; i < board.Length; i++)
+        {
+            boardButtons[i].GetComponentInChildren<TextMeshProUGUI>().text =
+                board[i] == Player.X ? "X" :
+                board[i] == Player.O ? "O" : "";
+
+            boardButtons[i].interactable = isMyTurn && board[i] == Player.None;
+        }
+
+        string currentPlayerName = isMyTurn ? playerName : "Opponent";
+        currentPlayerText.text = $"Current Player: {currentPlayerName} ({game.GetCurrentPlayer()})";
+
+        if (game.IsGameEnded())
+        {
+            gameStatusText.text = $"Game Over! {game.GetCurrentPlayer()} wins!";
+        }
+    }
+
+
+    private void DisplayGameResult(string result)
+    {
+        gameStatusText.text = result;
+        Invoke("ReturnToRoom", 5.0f);
+    }
+
+    private void ReturnToRoom()
+    {
+        ChangeUIState(UIState.Room);
+    }
+
 
     private bool PopNetworkEventAndCheckForData(out NetworkEvent.Type networkEventType, out DataStreamReader streamReader, out NetworkPipeline pipelineUsedToSendEvent)
     {
