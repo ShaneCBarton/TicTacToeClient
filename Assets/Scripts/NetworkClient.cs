@@ -10,6 +10,8 @@ public class NetworkClient : MonoBehaviour
 {
     private enum UIState { Login, AccountCreation, Room, Playing, Feedback, Waiting }
     private UIState currentState;
+    private enum PlayerRole { Player1, Player2, Spectator, None }
+    private PlayerRole currentRole = PlayerRole.None;
 
     [Header("Login")]
     [SerializeField] private GameObject loginPanel;
@@ -222,6 +224,13 @@ public class NetworkClient : MonoBehaviour
             string result = msg.Split(':')[1];
             DisplayGameResult(result);
         }
+        else if (msg.StartsWith("SpectatorAssigned:"))
+        {
+            currentRole = PlayerRole.Spectator;
+            isMyTurn = false;
+            ChangeUIState(UIState.Playing);
+            UpdateGameUI();
+        }
         else
         {
             DisplayFeedback("Unknown response from server.");
@@ -412,17 +421,17 @@ public class NetworkClient : MonoBehaviour
                 board[i] == Player.X ? "X" :
                 board[i] == Player.O ? "O" : "";
 
-            boardButtons[i].interactable = isMyTurn && board[i] == Player.None;
+            boardButtons[i].interactable = currentRole != PlayerRole.Spectator &&
+                                         isMyTurn &&
+                                         board[i] == Player.None;
         }
 
-        string currentPlayerName = isMyTurn ? playerName : "Opponent";
-        currentPlayerText.text = $"Current Player: {currentPlayerName} ({game.GetCurrentPlayer()})";
-
-        if (game.IsGameEnded())
-        {
-            gameStatusText.text = $"Game Over! {game.GetCurrentPlayer()} wins!";
-        }
+        string statusText = currentRole == PlayerRole.Spectator ?
+            "Spectating" :
+            $"Current Player: {(isMyTurn ? playerName : "Opponent")} ({game.GetCurrentPlayer()})";
+        currentPlayerText.text = statusText;
     }
+
 
 
     private void DisplayGameResult(string result)
